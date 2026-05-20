@@ -1,20 +1,25 @@
 const router = require('express').Router();
 const multer = require('multer');
-const path = require('path');
+
 
 const Design = require('../models/Design');
 const auth = require('../middleware/auth');
 
-const storage = multer.diskStorage({
-  destination: (_, __, cb) => {
-    cb(null, 'uploads/');
-  },
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const cloudinary = require('../config/cloudinary');
 
-  filename: (_, file, cb) => {
-    const uniqueName =
-      Date.now() + path.extname(file.originalname);
+const storage = new CloudinaryStorage({
+  cloudinary,
 
-    cb(null, uniqueName);
+  params: {
+    folder: 'pmj-designs',
+
+    allowed_formats: [
+      'jpg',
+      'jpeg',
+      'png',
+      'webp'
+    ]
   }
 });
 
@@ -63,8 +68,8 @@ router.post(
       } = req.body;
 
       const imageUrl = req.file
-        ? `/uploads/${req.file.filename}`
-        : '';
+  ? req.file.path
+  : '';
 
       const design = await Design.create({
         title,
