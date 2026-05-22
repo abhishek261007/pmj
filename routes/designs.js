@@ -1,35 +1,45 @@
 const router = require('express').Router();
 const multer = require('multer');
-
+const streamifier = require('streamifier');
 
 const Design = require('../models/Design');
 const auth = require('../middleware/auth');
 
-const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const cloudinary = require('../config/cloudinary');
 
-const storage = new CloudinaryStorage({
-  cloudinary,
-
-  params: {
-    folder: 'pmj-designs',
-
-    allowed_formats: [
-      'jpg',
-      'jpeg',
-      'png',
-      'webp'
-    ]
-  }
-});
+const storage = multer.memoryStorage();
 
 const upload = multer({
   storage,
 
   limits: {
-    fileSize: 10 * 1024 * 1024
-  }
+    fileSize: 15 * 1024 * 1024,
+  },
 });
+
+const uploadToCloudinary = (buffer) => {
+  return new Promise((resolve, reject) => {
+
+    const stream =
+      cloudinary.uploader.upload_stream(
+        {
+          folder: 'pmj-designs',
+        },
+
+        (error, result) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve(result);
+          }
+        }
+      );
+
+    streamifier
+      .createReadStream(buffer)
+      .pipe(stream);
+  });
+};
 
 router.get('/', auth, async (req, res) => {
   try {
@@ -45,11 +55,13 @@ router.get('/', auth, async (req, res) => {
       .sort({ createdAt: -1 });
 
     res.json(designs);
+
   } catch (err) {
+
     console.log(err);
 
     res.status(500).json({
-      message: 'Failed to fetch designs'
+      message: 'Failed to fetch designs',
     });
   }
 });
@@ -58,26 +70,41 @@ router.post(
   '/',
   auth,
   upload.single('image'),
+
   async (req, res) => {
     try {
+
+      console.log('BODY:', req.body);
+      console.log('FILE:', req.file);
+
       const {
         title,
         sku,
         weight,
-        catalogId
+        catalogId,
       } = req.body;
 
-      const imageUrl = req.file
-  ? req.file.path
-  : '';
+      let imageUrl = '';
 
-      const design = await Design.create({
-        title,
-        sku,
-        weight,
-        catalogId,
-        imageUrl
-      });
+      if (req.file) {
+
+        const uploaded =
+          await uploadToCloudinary(
+            req.file.buffer
+          );
+
+        imageUrl =
+          uploaded.secure_url;
+      }
+
+      const design =
+        await Design.create({
+          title,
+          sku,
+          weight,
+          catalogId,
+          imageUrl,
+        });
 
       req.app
         .get('io')
@@ -86,72 +113,91 @@ router.post(
       res.json(design);
 
     } catch (err) {
+
       console.log(err);
 
       res.status(500).json({
-        message: 'Could not create design'
+        message:
+          err.message ||
+          'Could not create design',
       });
     }
   }
 );
 
-router.patch('/:id/status', auth, async (req, res) => {
-  try {
-    const { status } = req.body;
+router.patch(
+  '/:id/status',
+  auth,
 
-    const design = await Design.findById(
-      req.params.id
-    );
+  async (req, res) => {
+    try {
 
-    if (!design) {
-      return res.status(404).json({
-        message: 'Design not found'
+      const { status } =
+        req.body;
+
+      const design =
+        await Design.findById(
+          req.params.id
+        );
+
+      if (!design) {
+        return res.status(404).json({
+          message: 'Design not found',
+        });
+      }
+
+      design.history.push({
+        from: design.status,
+        to: status,
+      });
+
+      design.status = status;
+
+      await design.save();
+
+      req.app
+        .get('io')
+        .emit('design-updated', design);
+
+      res.json(design);
+
+    } catch (err) {
+
+      console.log(err);
+
+      res.status(500).json({
+        message:
+          'Failed to update design',
       });
     }
-
-    design.history.push({
-      from: design.status,
-      to: status,
-    });
-
-    design.status = status;
-
-    await design.save();
-
-    req.app
-      .get('io')
-      .emit('design-updated', design);
-
-    res.json(design);
-
-  } catch (err) {
-    console.log(err);
-
-    res.status(500).json({
-      message: 'Failed to update design'
-    });
   }
-});
+);
 
 router.delete('/:id', auth, async (req, res) => {
   try {
+
     await Design.findByIdAndDelete(
       req.params.id
     );
 
     req.app
       .get('io')
-      .emit('design-deleted', req.params.id);
+      .emit(
+        'design-deleted',
+        req.params.id
+      );
 
     res.json({
-      success: true
+      success: true,
     });
 
   } catch (err) {
+
     console.log(err);
 
     res.status(500).json({
-      message: 'Failed to delete design'
+      message:
+        'Failed to delete design',
     });
   }
 });
