@@ -1,5 +1,11 @@
 const router = require('express').Router();
-const multer = require('multer');
+const router = require('express').Router();
+
+// Unwrap the modern ES Module default export
+const multerRaw = require('multer');
+const multer = multerRaw.default || multerRaw;
+
+const { Readable } = require('stream');
 const { Readable } = require('stream'); // Use Node's built-in stream module!
 
 const Design = require('../models/Design');
