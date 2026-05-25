@@ -122,7 +122,7 @@ io.on('connection', () => {
 | PARTIAL ORDER FULFILLMENT
 |--------------------------------------------------------------------------
 */
-
+app.use('/inquiries', inquiryRoutes)
 app.patch(
   '/orders/:orderId/item/:itemId',
   async (req, res) => {
