@@ -113,6 +113,11 @@ app.use(
   require('./routes/public')
 );
 
+app.use(
+  '/inquiryRoutes',
+  require('./routes/inquiries')
+);
+
 io.on('connection', () => {
   console.log('Socket connected');
 });
@@ -122,7 +127,7 @@ io.on('connection', () => {
 | PARTIAL ORDER FULFILLMENT
 |--------------------------------------------------------------------------
 */// Force Render rebuild for multer stream fix
-app.use('./routes/inquiries', inquiryRoutes)
+
 app.patch(
   '/orders/:orderId/item/:itemId',
   async (req, res) => {
