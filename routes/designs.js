@@ -141,4 +141,46 @@ router.patch(
     }
   }
 );
+router.patch(
+  '/:id/status',
+  async (req, res) => {
+    try {
+      const { status } = req.body;
+
+      const design =
+        await Design.findById(
+          req.params.id
+        );
+
+      if (!design) {
+        return res.status(404).json({
+          success: false,
+        });
+      }
+
+      // TRACK HISTORY
+
+      design.history.push({
+        from: design.status,
+        to: status,
+      });
+
+      design.status = status;
+
+      await design.save();
+
+      res.json({
+        success: true,
+        design,
+      });
+
+    } catch (err) {
+      console.error(err);
+
+      res.status(500).json({
+        success: false,
+      });
+    }
+  }
+);
 module.exports = router;

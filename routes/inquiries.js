@@ -8,7 +8,7 @@ const router = express.Router();
 
 /*
 |--------------------------------------------------------------------------
-| GET ALL INQUIRIES
+| GET INQUIRIES
 |--------------------------------------------------------------------------
 */
 
@@ -29,8 +29,8 @@ router.get('/', async (req, res) => {
             return {
               ...item.toObject(),
 
-              availability:
-                design?.availability ||
+              status:
+                design?.status ||
                 'available',
             };
           })
@@ -64,22 +64,10 @@ router.post('/create', async (req, res) => {
   try {
     const { items } = req.body;
 
-    // CREATE INQUIRY
-
-    const inquiry = await Inquiry.create({
-      items,
-    });
-
-    // RESERVE DESIGNS
-
-    for (const item of items) {
-      await Design.findByIdAndUpdate(
-        item.designId,
-        {
-          availability: 'reserved',
-        }
-      );
-    }
+    const inquiry =
+      await Inquiry.create({
+        items,
+      });
 
     res.json({
       success: true,
