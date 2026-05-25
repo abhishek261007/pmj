@@ -17,7 +17,33 @@ router.get('/', async (req, res) => {
     const inquiries = await Inquiry.find()
       .sort({ createdAt: -1 });
 
-    res.json(inquiries);
+    const enriched = await Promise.all(
+      inquiries.map(async (inq) => {
+        const items = await Promise.all(
+          inq.items.map(async (item) => {
+            const design =
+              await Design.findById(
+                item.designId
+              );
+
+            return {
+              ...item.toObject(),
+
+              availability:
+                design?.availability ||
+                'available',
+            };
+          })
+        );
+
+        return {
+          ...inq.toObject(),
+          items,
+        };
+      })
+    );
+
+    res.json(enriched);
 
   } catch (err) {
     console.error(err);

@@ -11,11 +11,6 @@ const InquirySchema = new mongoose.Schema(
         catalogName: String,
 
         imageUrl: String,
-
-        availability: {
-          type: String,
-          default: 'available',
-        },
       },
     ],
 
