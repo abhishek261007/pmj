@@ -1,5 +1,4 @@
 const router = require('express').Router();
-const router = require('express').Router();
 
 // Unwrap the modern ES Module default export
 const multerRaw = require('multer');
