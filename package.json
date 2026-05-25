@@ -25,5 +25,8 @@
   },
   "engines": {
     "node": "20.x"
+  },
+  "overrides": {
+    "readable-stream": "^3.6.2"
   }
 }
