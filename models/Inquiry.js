@@ -2,11 +2,16 @@ const mongoose = require('mongoose');
 
 const InquirySchema = new mongoose.Schema(
   {
-    items: [
-      {
+items: [
+  {
         designId: String,
         sku: String,
         catalogName: String,
+        imageUrl: String,
+        availability: {
+          type: String,
+          default: 'available',
+        },
       },
     ],
 
