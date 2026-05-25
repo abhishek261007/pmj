@@ -7,10 +7,7 @@ const auth = require('../middleware/auth');
 const cloudinary = require('../config/cloudinary');
 
 // 1. Initialize memory storage (multer@next format)
-const storage = multer.memoryStorage();
-
 const upload = multer({
-  storage: storage,
   limits: {
     fileSize: 15 * 1024 * 1024, // 15 MB limit
   },
