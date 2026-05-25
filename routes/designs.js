@@ -117,5 +117,28 @@ router.delete('/:id', auth, async (req, res) => {
     res.status(500).json({ message: 'Failed to delete design' });
   }
 });
+router.patch(
+  '/:id/availability',
+  async (req, res) => {
+    try {
+      const { availability } = req.body;
 
+      await Design.findByIdAndUpdate(
+        req.params.id,
+        { availability }
+      );
+
+      res.json({
+        success: true,
+      });
+
+    } catch (err) {
+      console.error(err);
+
+      res.status(500).json({
+        success: false,
+      });
+    }
+  }
+);
 module.exports = router;
