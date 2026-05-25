@@ -4,6 +4,22 @@ const Design = require('../models/Design');
 
 const router = express.Router();
 
+router.get('/', async (req, res) => {
+  try {
+    const inquiries = await Inquiry.find()
+      .sort({ createdAt: -1 });
+
+    res.json(inquiries);
+
+  } catch (err) {
+    console.error(err);
+
+    res.status(500).json({
+      success: false,
+    });
+  }
+});
+
 router.post('/create', async (req, res) => {
   try {
     const { items } = req.body;
