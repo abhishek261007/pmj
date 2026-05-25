@@ -1,6 +1,6 @@
-import express from 'express';
-import Inquiry from '../models/Inquiry';
-import Design from '../models/Design';
+const express = require('express');
+const Inquiry = require('../models/Inquiry');
+const Design = require('../models/Design');
 
 const router = express.Router();
 
@@ -28,7 +28,7 @@ router.post('/create', async (req, res) => {
       inquiry,
     });
   } catch (err) {
-    console.log(err);
+    console.error(err);
 
     res.status(500).json({
       success: false,
@@ -36,4 +36,4 @@ router.post('/create', async (req, res) => {
   }
 });
 
-export default router;
+module.exports = router;

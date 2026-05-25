@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+const mongoose = require('mongoose');
 
 const InquirySchema = new mongoose.Schema(
   {
@@ -23,7 +23,4 @@ const InquirySchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-export default mongoose.model(
-  'Inquiry',
-  InquirySchema
-);
+module.exports = mongoose.model('Inquiry', InquirySchema);
