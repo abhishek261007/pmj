@@ -1,8 +1,16 @@
 const express = require('express');
+
 const Inquiry = require('../models/Inquiry');
+
 const Design = require('../models/Design');
 
 const router = express.Router();
+
+/*
+|--------------------------------------------------------------------------
+| GET ALL INQUIRIES
+|--------------------------------------------------------------------------
+*/
 
 router.get('/', async (req, res) => {
   try {
@@ -20,16 +28,24 @@ router.get('/', async (req, res) => {
   }
 });
 
+/*
+|--------------------------------------------------------------------------
+| CREATE INQUIRY
+|--------------------------------------------------------------------------
+*/
+
 router.post('/create', async (req, res) => {
   try {
     const { items } = req.body;
 
     // CREATE INQUIRY
+
     const inquiry = await Inquiry.create({
       items,
     });
 
     // RESERVE DESIGNS
+
     for (const item of items) {
       await Design.findByIdAndUpdate(
         item.designId,
@@ -43,6 +59,7 @@ router.post('/create', async (req, res) => {
       success: true,
       inquiry,
     });
+
   } catch (err) {
     console.error(err);
 
