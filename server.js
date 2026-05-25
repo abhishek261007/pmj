@@ -114,7 +114,7 @@ app.use(
 );
 
 app.use(
-  '/inquiryRoutes',
+  '/inquiries', // <-- Changed this from '/inquiryRoutes'
   require('./routes/inquiries')
 );
 
