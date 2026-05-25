@@ -122,7 +122,7 @@ io.on('connection', () => {
 | PARTIAL ORDER FULFILLMENT
 |--------------------------------------------------------------------------
 */// Force Render rebuild for multer stream fix
-app.use('/inquiries', inquiryRoutes)
+app.use('./routes/inquiries', inquiryRoutes)
 app.patch(
   '/orders/:orderId/item/:itemId',
   async (req, res) => {
