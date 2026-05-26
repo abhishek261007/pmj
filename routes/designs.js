@@ -58,6 +58,12 @@ router.get('/', auth, async (req, res) => {
 |--------------------------------------------------------------------------
 */
 router.post('/', auth, upload.single('image'), async (req, res) => {
+  console.log('=== DESIGN POST HIT ===');
+  console.log('CONTENT-TYPE:', req.headers['content-type']);
+  console.log('REQ.FILE:', req.file);
+  console.log('REQ.BODY:', req.body);
+  // ... rest of code
+router.post('/', auth, upload.single('image'), async (req, res) => {
   try {
     const { title, sku, skuNumber, weight, catalogId } = req.body;
 
