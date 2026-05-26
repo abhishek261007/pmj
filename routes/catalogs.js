@@ -1,43 +1,85 @@
 const router = require('express').Router();
 
 const Catalog = require('../models/Catalog');
-const Design = require('../models/Design');
+const Design  = require('../models/Design');
+const auth    = require('../middleware/auth');
 
-const auth = require('../middleware/auth');
-
+/*
+|--------------------------------------------------------------------------
+| GET /catalogs
+|--------------------------------------------------------------------------
+*/
 router.get('/', auth, async (_, res) => {
-  const catalogs = await Catalog.find()
-    .sort({ createdAt: -1 });
-
+  const catalogs = await Catalog.find().sort({ createdAt: -1 });
   res.json(catalogs);
 });
 
+/*
+|--------------------------------------------------------------------------
+| POST /catalogs
+| Body: { name, description?, skuPrefix }
+|--------------------------------------------------------------------------
+*/
 router.post('/', auth, async (req, res) => {
-  const catalog = await Catalog.create(req.body);
+  try {
+    const { name, description, skuPrefix } = req.body;
 
-  res.json(catalog);
+    if (!name || !skuPrefix) {
+      return res.status(400).json({ message: 'name and skuPrefix are required.' });
+    }
+
+    const catalog = await Catalog.create({
+      name,
+      description: description || '',
+      skuPrefix: skuPrefix.toUpperCase().trim(),
+      nextSkuNumber: 1,
+    });
+
+    res.json(catalog);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Could not create catalog.' });
+  }
 });
 
-router.delete('/:id', auth, async (req, res) => {
+/*
+|--------------------------------------------------------------------------
+| GET /catalogs/:id/next-sku
+| Returns the prefix and the next available SKU number for the catalog.
+| The frontend uses this to pre-fill the SKU stepper.
+|--------------------------------------------------------------------------
+*/
+router.get('/:id/next-sku', auth, async (req, res) => {
   try {
-    await Design.deleteMany({
-      catalogId: req.params.id
-    });
+    const catalog = await Catalog.findById(req.params.id).select('skuPrefix nextSkuNumber');
 
-    await Catalog.findByIdAndDelete(
-      req.params.id
-    );
+    if (!catalog) {
+      return res.status(404).json({ message: 'Catalog not found.' });
+    }
 
     res.json({
-      success: true
+      skuPrefix:     catalog.skuPrefix,
+      nextSkuNumber: catalog.nextSkuNumber,
     });
-
   } catch (err) {
-    console.log(err);
+    console.error(err);
+    res.status(500).json({ message: 'Could not fetch SKU info.' });
+  }
+});
 
-    res.status(500).json({
-      message: 'Could not delete catalog'
-    });
+/*
+|--------------------------------------------------------------------------
+| DELETE /catalogs/:id
+|--------------------------------------------------------------------------
+*/
+router.delete('/:id', auth, async (req, res) => {
+  try {
+    await Design.deleteMany({ catalogId: req.params.id });
+    await Catalog.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Could not delete catalog.' });
   }
 });
 
