@@ -1,42 +1,37 @@
 const router = require('express').Router();
 
-// Unwrap the modern ES Module default export
 const multerRaw = require('multer');
 const multer = multerRaw.default || multerRaw;
-const { Readable } = require('stream'); // Use Node's built-in stream module!
+const { Readable } = require('stream');
 
 const Design = require('../models/Design');
 const auth = require('../middleware/auth');
 const cloudinary = require('../config/cloudinary');
 
-// 1. Initialize memory storage (multer@next format)
 const upload = multer({
   limits: {
-    fileSize: 15 * 1024 * 1024, // 15 MB limit
+    fileSize: 15 * 1024 * 1024,
   },
 });
 
-// 2. Modern Cloudinary upload without streamifier
 const uploadToCloudinary = (buffer) => {
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
-      {
-        folder: 'pmj-designs',
-      },
+      { folder: 'pmj-designs' },
       (error, result) => {
-        if (error) {
-          reject(error);
-        } else {
-          resolve(result);
-        }
+        if (error) reject(error);
+        else resolve(result);
       }
     );
-
-    // Convert the memory buffer to a stream natively and pipe it
     Readable.from(buffer).pipe(stream);
   });
 };
 
+/*
+|--------------------------------------------------------------------------
+| GET /designs
+|--------------------------------------------------------------------------
+*/
 router.get('/', auth, async (req, res) => {
   try {
     const { catalogId } = req.query;
@@ -54,6 +49,11 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
+/*
+|--------------------------------------------------------------------------
+| POST /designs
+|--------------------------------------------------------------------------
+*/
 router.post('/', auth, upload.single('image'), async (req, res) => {
   try {
     const { title, sku, weight, catalogId } = req.body;
@@ -76,19 +76,33 @@ router.post('/', auth, upload.single('image'), async (req, res) => {
     res.json(design);
   } catch (err) {
     console.error(err);
-    res.status(500).json({
-      message: err.message || 'Could not create design',
-    });
+    res.status(500).json({ message: err.message || 'Could not create design' });
   }
 });
 
-router.patch('/:id/status', auth, async (req, res) => {
+/*
+|--------------------------------------------------------------------------
+| PATCH /designs/:id/status  — called from both admin & inquiry screen
+|--------------------------------------------------------------------------
+*/
+router.patch('/:id/status', async (req, res) => {
   try {
     const { status } = req.body;
+
+    if (!['available', 'sold'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status value.',
+      });
+    }
+
     const design = await Design.findById(req.params.id);
 
     if (!design) {
-      return res.status(404).json({ message: 'Design not found' });
+      return res.status(404).json({
+        success: false,
+        message: 'Design not found.',
+      });
     }
 
     design.history.push({
@@ -99,14 +113,23 @@ router.patch('/:id/status', auth, async (req, res) => {
     design.status = status;
     await design.save();
 
-    req.app.get('io').emit('design-updated', design);
-    res.json(design);
+    // Emit socket event if io is available
+    if (req.app.get('io')) {
+      req.app.get('io').emit('design-updated', design);
+    }
+
+    res.json({ success: true, design });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: 'Failed to update design' });
+    res.status(500).json({ success: false });
   }
 });
 
+/*
+|--------------------------------------------------------------------------
+| DELETE /designs/:id
+|--------------------------------------------------------------------------
+*/
 router.delete('/:id', auth, async (req, res) => {
   try {
     await Design.findByIdAndDelete(req.params.id);
@@ -117,70 +140,5 @@ router.delete('/:id', auth, async (req, res) => {
     res.status(500).json({ message: 'Failed to delete design' });
   }
 });
-router.patch(
-  '/:id/availability',
-  async (req, res) => {
-    try {
-      const { availability } = req.body;
 
-      await Design.findByIdAndUpdate(
-        req.params.id,
-        { availability }
-      );
-
-      res.json({
-        success: true,
-      });
-
-    } catch (err) {
-      console.error(err);
-
-      res.status(500).json({
-        success: false,
-      });
-    }
-  }
-);
-router.patch(
-  '/:id/status',
-  async (req, res) => {
-    try {
-      const { status } = req.body;
-
-      const design =
-        await Design.findById(
-          req.params.id
-        );
-
-      if (!design) {
-        return res.status(404).json({
-          success: false,
-        });
-      }
-
-      // TRACK HISTORY
-
-      design.history.push({
-        from: design.status,
-        to: status,
-      });
-
-      design.status = status;
-
-      await design.save();
-
-      res.json({
-        success: true,
-        design,
-      });
-
-    } catch (err) {
-      console.error(err);
-
-      res.status(500).json({
-        success: false,
-      });
-    }
-  }
-);
 module.exports = router;
