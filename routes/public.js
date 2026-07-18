@@ -7,14 +7,6 @@ const Catalog =
 const Design =
   require('../models/Design');
 
-const Order =
-  require('../models/Order');
-
-/*
-|--------------------------------------------------------------------------
-| GET CATALOGS
-|--------------------------------------------------------------------------
-*/
 
 router.get(
   '/catalogs',
@@ -110,82 +102,6 @@ router.get(
       res.status(500).json({
         message:
           'Failed to fetch design'
-      });
-    }
-  }
-);
-
-/*
-|--------------------------------------------------------------------------
-| CREATE ORDER
-|--------------------------------------------------------------------------
-*/
-
-router.post(
-  '/orders',
-  async (req, res) => {
-    try {
-      const {
-        customerName,
-        customerPhone,
-        items
-      } = req.body;
-
-      if (
-        !customerName ||
-        !customerPhone ||
-        !items ||
-        !Array.isArray(items)
-      ) {
-        return res
-          .status(400)
-          .json({
-            message:
-              'Missing required fields'
-          });
-      }
-
-      const order =
-        await Order.create({
-          customerName,
-
-          customerPhone,
-
-          status: 'pending',
-
-          items: items.map(
-            (item) => ({
-              designId:
-                item._id,
-
-              title:
-                item.title,
-
-              sku: item.sku,
-
-              weight:
-                item.weight,
-
-              imageUrl:
-                item.imageUrl,
-
-              orderStatus:
-                'pending'
-            })
-          )
-        });
-
-      res.json(order);
-
-    } catch (err) {
-      console.log(
-        'CREATE ORDER ERROR',
-        err
-      );
-
-      res.status(500).json({
-        message:
-          'Failed to place order'
       });
     }
   }

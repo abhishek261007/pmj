@@ -1,14 +1,13 @@
 require('dotenv').config();
 
 const express = require('express');
+const path = require('path');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const http = require('http');
 const { Server } = require('socket.io');
-
-const Order = require('./models/Order');
 
 const app = express();
 
@@ -40,7 +39,7 @@ app.use(
 app.use(
   rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 300
+    max: 3000
   })
 );
 
@@ -59,7 +58,7 @@ app.use(
 
 app.use(
   '/uploads',
-  express.static('uploads', {
+  express.static(path.join(__dirname, 'uploads'), {
     setHeaders: (res) => {
       res.set(
         'Access-Control-Allow-Origin',
@@ -104,159 +103,82 @@ app.use(
 );
 
 app.use(
-  '/orders',
-  require('./routes/orders')
-);
-
-app.use(
   '/public',
   require('./routes/public')
 );
 
 app.use(
-  '/inquiries', // <-- Changed this from '/inquiryRoutes'
+  '/inquiries',
   require('./routes/inquiries')
 );
+
+app.use(
+  '/campaigns',
+  require('./routes/campaigns')
+);
+
+app.use(
+  '/audit-logs',
+  require('./routes/audit')
+);
+
+app.use(
+  '/customers',
+  require('./routes/customers')
+);
+
+app.use(
+  '/config',
+  require('./routes/config')
+);
+
+app.use('/', require('./routes/notifications'));
 
 io.on('connection', () => {
   console.log('Socket connected');
 });
 
-/*
-|--------------------------------------------------------------------------
-| PARTIAL ORDER FULFILLMENT
-|--------------------------------------------------------------------------
-*/// Force Render rebuild for multer stream fix
+// ── Deep link landing page ──
+app.get('/c/:id', (req, res) => {
+  const { id } = req.params;
+  const webUrl = `https://pmjewellers.com/catalog/${id}/web`;
+  const playUrl = 'https://play.google.com/store/apps/details?id=com.abhishek261007.pmj';
 
-app.patch(
-  '/orders/:orderId/item/:itemId',
-  async (req, res) => {
-    try {
-      const {
-        orderId,
-        itemId
-      } = req.params;
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PM Jewellers</title>
+  <meta http-equiv="refresh" content="2;url=${playUrl}">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:-apple-system,system-ui,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#F5F4F2;color:#333}
+    .c{text-align:center;padding:40px}
+    h1{font-size:24px;margin-bottom:8px;color:#8C7355}
+    p{color:#666;margin-bottom:12px}
+    a{color:#8C7355}
+  </style>
+</head>
+<body>
+  <div class="c">
+    <h1>PM Jewellers</h1>
+    <p>Opening the app…</p>
+    <p>If nothing happens, <a href="${playUrl}">install from Google Play</a></p>
+    <p>Or <a href="${webUrl}">view in browser</a></p>
+  </div>
+</body>
+</html>`);
+});
 
-      const { status } =
-        req.body;
+app.get('/catalog/:id', (req, res) => {
+  const { id } = req.params;
+  res.redirect(`/c/${id}`);
+});
 
-      if (
-        ![
-          'pending',
-          'fulfilled',
-          'cancelled'
-        ].includes(status)
-      ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              'Invalid status'
-          });
-      }
-
-      const order =
-        await Order.findById(
-          orderId
-        );
-
-      if (!order) {
-        return res
-          .status(404)
-          .json({
-            error:
-              'Order not found'
-          });
-      }
-
-      const item =
-        order.items.find(
-          (i) =>
-            i._id.toString() ===
-            itemId
-        );
-
-      if (!item) {
-        return res
-          .status(404)
-          .json({
-            error:
-              'Item not found'
-          });
-      }
-
-      item.orderStatus =
-        status;
-
-      const allFulfilled =
-        order.items.every(
-          (i) =>
-            i.orderStatus ===
-            'fulfilled'
-        );
-
-      const allCancelled =
-        order.items.every(
-          (i) =>
-            i.orderStatus ===
-            'cancelled'
-        );
-
-      const someProcessed =
-        order.items.some(
-          (i) =>
-            i.orderStatus ===
-              'fulfilled' ||
-            i.orderStatus ===
-              'cancelled'
-        );
-
-      if (allFulfilled) {
-        order.status =
-          'fulfilled';
-
-      } else if (
-        allCancelled
-      ) {
-        order.status =
-          'cancelled';
-
-      } else if (
-        someProcessed
-      ) {
-        order.status =
-          'partial';
-
-      } else {
-        order.status =
-          'pending';
-      }
-
-      await order.save();
-
-      io.emit(
-        'orderUpdated',
-        order
-      );
-
-      res.json(order);
-
-    } catch (err) {
-      console.log(err);
-
-      res.status(500).json({
-        error:
-          'Could not update order item'
-      });
-    }
-  }
-);
-
-/*
-|--------------------------------------------------------------------------
-| HEALTH CHECK
-|--------------------------------------------------------------------------
-*/
+app.get('/catalog/:id/web', (req, res) => {
+  res.redirect(`https://pmjewellers.com/catalog/${req.params.id}?source=web`);
+});
 
 app.get('/health', (_, res) => {
   res.json({
@@ -264,12 +186,6 @@ app.get('/health', (_, res) => {
     status: 'running'
   });
 });
-
-/*
-|--------------------------------------------------------------------------
-| START SERVER
-|--------------------------------------------------------------------------
-*/
 
 const PORT = process.env.PORT || 3000;
 

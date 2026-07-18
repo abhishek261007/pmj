@@ -1,39 +1,83 @@
 const router = require('express').Router();
 
+const fs = require('fs');
+const path = require('path');
+
 const multerRaw = require('multer');
-const multer    = multerRaw.default || multerRaw;
-const { Readable } = require('stream');
+const multer = multerRaw.default || multerRaw;
 
-const Design  = require('../models/Design');
+const Design = require('../models/Design');
 const Catalog = require('../models/Catalog');
-const auth    = require('../middleware/auth');
-const cloudinary = require('../config/cloudinary');
+const auth = require('../middleware/auth');
+const { authorize } = require('../middleware/auth');
+const { generateThumbnail, deleteThumbnail } = require('../utils/thumbnail');
+const { logAudit } = require('../utils/audit');
 
-const upload = multer({ limits: { fileSize: 15 * 1024 * 1024 } });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 15 * 1024 * 1024,
+  },
+});
 
-const uploadToCloudinary = (buffer) =>
-  new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      { folder: 'pmj-designs' },
-      (error, result) => (error ? reject(error) : resolve(result))
-    );
-    Readable.from(buffer).pipe(stream);
-  });
+const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
 
-// Upload from a base64 string (used when client sends JSON instead of multipart)
-const uploadBase64ToCloudinary = (base64String) =>
-  new Promise((resolve, reject) => {
-    // base64String may or may not have the data URI prefix — handle both
-    const dataUri = base64String.startsWith('data:')
-      ? base64String
-      : `data:image/jpeg;base64,${base64String}`;
+if (!fs.existsSync(UPLOAD_DIR)) {
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
 
-    cloudinary.uploader.upload(
-      dataUri,
-      { folder: 'pmj-designs' },
-      (error, result) => (error ? reject(error) : resolve(result))
-    );
-  });
+function sanitizeFilename(name) {
+  return String(name)
+    .replace(/[^a-zA-Z0-9-_]/g, '_')
+    .trim();
+}
+
+// Now returns { imageUrl, thumbnailUrl } instead of just a string,
+// since we generate the thumbnail straight from the in-memory buffer
+// at the same time we write the original to disk.
+async function saveBufferToUploads(buffer, sku, ext = 'jpg') {
+  const safeSku = sanitizeFilename(sku || Date.now());
+
+  let filename = `${safeSku}.${ext}`;
+  let filepath = path.join(UPLOAD_DIR, filename);
+
+  let counter = 1;
+
+  while (fs.existsSync(filepath)) {
+    filename = `${safeSku}_${counter}.${ext}`;
+    filepath = path.join(UPLOAD_DIR, filename);
+    counter++;
+  }
+
+  await fs.promises.writeFile(filepath, buffer);
+
+  let thumbnailUrl = null;
+
+  try {
+    // sharp() can read straight from the buffer we already have in memory —
+    // no need to re-read the file we just wrote
+    thumbnailUrl = await generateThumbnail(buffer, filename);
+  } catch (err) {
+    // Don't fail the whole upload if thumbnail generation has an issue
+    // (e.g. unsupported format) — the original image still saved fine.
+    console.error('[saveBufferToUploads] thumbnail generation failed:', err);
+  }
+
+  return {
+    imageUrl: `/uploads/${filename}`,
+    thumbnailUrl,
+  };
+}
+
+async function saveBase64ToUploads(base64String, sku) {
+  const cleaned = base64String.startsWith('data:')
+    ? base64String.split(',')[1]
+    : base64String;
+
+  const buffer = Buffer.from(cleaned, 'base64');
+
+  return saveBufferToUploads(buffer, sku, 'jpg');
+}
 
 /*
 |--------------------------------------------------------------------------
@@ -43,36 +87,36 @@ const uploadBase64ToCloudinary = (base64String) =>
 router.get('/', auth, async (req, res) => {
   try {
     const filter = {};
-    if (req.query.catalogId) filter.catalogId = req.query.catalogId;
-    const designs = await Design.find(filter).sort({ createdAt: -1 });
+
+    if (req.query.catalogId) {
+      filter.catalogId = req.query.catalogId;
+    }
+
+    const designs = await Design.find(filter)
+      .sort({ createdAt: -1 });
+
     res.json(designs);
+
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: 'Failed to fetch designs' });
+
+    res.status(500).json({
+      message: 'Failed to fetch designs',
+    });
   }
 });
 
 /*
 |--------------------------------------------------------------------------
 | POST /designs
-|
-| Accepts TWO formats so we can support both multipart and JSON:
-|
-| A) multipart/form-data  (legacy / future)
-|    Fields: sku, skuNumber, weight, catalogId
-|    File:   image (binary)
-|
-| B) application/json     (current React Native client)
-|    { sku, skuNumber, weight, catalogId, imageBase64? }
-|    imageBase64 is a bare base64 string or a data URI
 |--------------------------------------------------------------------------
 */
 router.post(
   '/',
   auth,
-  // Run multer only for multipart requests; skip gracefully for JSON
   (req, res, next) => {
     const ct = req.headers['content-type'] || '';
+
     if (ct.includes('multipart/form-data')) {
       upload.single('image')(req, res, next);
     } else {
@@ -81,22 +125,41 @@ router.post(
   },
   async (req, res) => {
     try {
-      const { title, sku, skuNumber, weight, catalogId, imageBase64 } = req.body;
+      const {
+        title,
+        sku,
+        skuNumber,
+        weight,
+        catalogId,
+        imageBase64,
+      } = req.body;
 
-      console.log('DESIGN POST — content-type:', req.headers['content-type']);
-      console.log('REQ.FILE:', req.file);
+      console.log(
+        'DESIGN POST — content-type:',
+        req.headers['content-type']
+      );
+
+      console.log('REQ.FILE:', !!req.file);
       console.log('HAS imageBase64:', !!imageBase64);
 
       let imageUrl = '';
+      let thumbnailUrl = null;
 
       if (req.file && req.file.buffer) {
-        // Multipart upload
-        const uploaded = await uploadToCloudinary(req.file.buffer);
-        imageUrl = uploaded.secure_url;
+        const saved = await saveBufferToUploads(
+          req.file.buffer,
+          sku,
+          'jpg'
+        );
+        imageUrl = saved.imageUrl;
+        thumbnailUrl = saved.thumbnailUrl;
       } else if (imageBase64) {
-        // JSON / base64 upload
-        const uploaded = await uploadBase64ToCloudinary(imageBase64);
-        imageUrl = uploaded.secure_url;
+        const saved = await saveBase64ToUploads(
+          imageBase64,
+          sku
+        );
+        imageUrl = saved.imageUrl;
+        thumbnailUrl = saved.thumbnailUrl;
       }
 
       const design = await Design.create({
@@ -105,23 +168,49 @@ router.post(
         weight,
         catalogId,
         imageUrl,
+        thumbnailUrl,
       });
 
-      // Advance the catalog SKU counter (only ever moves forward)
       const usedNumber = parseInt(skuNumber, 10);
+
       if (!isNaN(usedNumber)) {
         await Catalog.findByIdAndUpdate(
           catalogId,
-          { $max: { nextSkuNumber: usedNumber + 1 } }
+          {
+            $max: {
+              nextSkuNumber: usedNumber + 1,
+            },
+          }
         );
       }
 
-      req.app.get('io').emit('design-created', design);
+      const io = req.app.get('io');
+
+      if (io) {
+        io.emit('design-created', design);
+      }
+
+      logAudit({
+        action: 'create',
+        resource: 'design',
+        resourceId: design._id,
+        userId: req.user?.id,
+        userRole: req.user?.role,
+        details: { sku, weight, catalogId, title },
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
       res.json(design);
 
     } catch (err) {
       console.error(err);
-      res.status(500).json({ message: err.message || 'Could not create design' });
+
+      res.status(500).json({
+        message:
+          err.message ||
+          'Could not create design',
+      });
     }
   }
 );
@@ -131,26 +220,67 @@ router.post(
 | PATCH /designs/:id/status
 |--------------------------------------------------------------------------
 */
-router.patch('/:id/status', async (req, res) => {
+router.patch('/:id/status', auth, async (req, res) => {
   try {
     const { status } = req.body;
+
     if (!['available', 'sold'].includes(status)) {
-      return res.status(400).json({ success: false, message: 'Invalid status value.' });
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status value.',
+      });
     }
-    const design = await Design.findById(req.params.id);
+
+    const design = await Design.findById(
+      req.params.id
+    );
+
     if (!design) {
-      return res.status(404).json({ success: false, message: 'Design not found.' });
+      return res.status(404).json({
+        success: false,
+        message: 'Design not found.',
+      });
     }
-    design.history.push({ from: design.status, to: status });
+
+    const previous = { status: design.status };
+
+    design.history.push({
+      from: design.status,
+      to: status,
+    });
+
     design.status = status;
+
     await design.save();
-    if (req.app.get('io')) {
-      req.app.get('io').emit('design-updated', design);
+
+    const io = req.app.get('io');
+
+    if (io) {
+      io.emit('design-updated', design);
     }
-    res.json({ success: true, design });
+
+    logAudit({
+      action: 'update',
+      resource: 'design',
+      resourceId: req.params.id,
+      userId: req.user?.id,
+      userRole: req.user?.role,
+      details: { from: previous.status, to: status, previous },
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    res.json({
+      success: true,
+      design,
+    });
+
   } catch (err) {
     console.error(err);
-    res.status(500).json({ success: false });
+
+    res.status(500).json({
+      success: false,
+    });
   }
 });
 
@@ -159,14 +289,72 @@ router.patch('/:id/status', async (req, res) => {
 | DELETE /designs/:id
 |--------------------------------------------------------------------------
 */
-router.delete('/:id', auth, async (req, res) => {
+router.delete('/:id', auth, authorize('admin'), async (req, res) => {
   try {
-    await Design.findByIdAndDelete(req.params.id);
-    req.app.get('io').emit('design-deleted', req.params.id);
-    res.json({ success: true });
+    const design = await Design.findById(
+      req.params.id
+    );
+
+    if (design?.imageUrl?.startsWith('/uploads/')) {
+      const filepath = path.join(
+        __dirname,
+        '..',
+        design.imageUrl
+      );
+
+      try {
+        if (fs.existsSync(filepath)) {
+          await fs.promises.unlink(filepath);
+        }
+      } catch (e) {
+        console.error(
+          'Could not delete image:',
+          filepath,
+          e
+        );
+      }
+    }
+
+    // Clean up the thumbnail alongside the original image
+    if (design?.thumbnailUrl) {
+      deleteThumbnail(design.thumbnailUrl);
+    }
+
+    await Design.findByIdAndDelete(
+      req.params.id
+    );
+
+    const io = req.app.get('io');
+
+    if (io) {
+      io.emit(
+        'design-deleted',
+        req.params.id
+      );
+    }
+
+    logAudit({
+      action: 'delete',
+      resource: 'design',
+      resourceId: req.params.id,
+      userId: req.user?.id,
+      userRole: req.user?.role,
+      details: { sku: design?.sku, title: design?.title },
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    res.json({
+      success: true,
+    });
+
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: 'Failed to delete design' });
+
+    res.status(500).json({
+      message:
+        'Failed to delete design',
+    });
   }
 });
 

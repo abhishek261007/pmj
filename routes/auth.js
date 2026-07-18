@@ -3,8 +3,10 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 const User = require('../models/User');
+const auth = require('../middleware/auth');
+const { authorize } = require('../middleware/auth');
 
-router.post('/register', async (req, res) => {
+router.post('/register', auth, authorize('admin'), async (req, res) => {
   const { name, username, password, role } = req.body;
 
   const passwordHash = await bcrypt.hash(password, 10);

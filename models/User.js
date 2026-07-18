@@ -9,8 +9,8 @@ const UserSchema = new mongoose.Schema({
   passwordHash: String,
   role: {
     type: String,
-    enum: ['admin', 'staff'],
-    default: 'staff'
+    enum: ['admin', 'user'],
+    default: 'user'
   }
 }, {
   timestamps: true

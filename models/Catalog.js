@@ -1,14 +1,26 @@
 const mongoose = require('mongoose');
 
 const CatalogSchema = new mongoose.Schema({
-  name:          { type: String, required: true },
-  description:   { type: String, default: '' },
+  name: { type: String, required: true },
 
-  // e.g. "PM", "SLV-A" — set once at creation, never changed
-  skuPrefix:     { type: String, required: true, uppercase: true, trim: true },
+  description: { type: String, default: '' },
 
-  // Auto-incrementing counter; always points to the NEXT available number
-  nextSkuNumber: { type: Number, default: 1 },
+  heroImageUrl: {
+    type: String,
+    default: '',
+  },
+
+  skuPrefix: {
+    type: String,
+    required: true,
+    uppercase: true,
+    trim: true,
+  },
+
+  nextSkuNumber: {
+    type: Number,
+    default: 1,
+  },
 
 }, { timestamps: true });
 

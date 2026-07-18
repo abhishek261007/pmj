@@ -2,6 +2,18 @@ const mongoose = require('mongoose');
 
 const InquirySchema = new mongoose.Schema(
   {
+    customerName: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    customerPhone: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
     items: [
       {
         designId: {
@@ -13,6 +25,12 @@ const InquirySchema = new mongoose.Schema(
         imageUrl: String,
       },
     ],
+
+    pushToken: {
+      type: String,
+      default: null,
+    },
+
     status: {
       type: String,
       enum: ['pending', 'completed', 'cancelled'],
